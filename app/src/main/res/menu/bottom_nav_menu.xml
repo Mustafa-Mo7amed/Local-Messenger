@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/miConnect"
+        android:title="Connect"
+        android:icon="@drawable/ic_connect_foreground" />
+    <item
+        android:id="@+id/miMessages"
+        android:title="Messages"
+        android:icon="@drawable/ic_messages_foreground" />
+</menu>
