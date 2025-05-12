@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteOpenHelper
 
 class DatabaseHelper(context: Context): SQLiteOpenHelper(context, "messenger.db", null, 1) {
     private val USER_TABLE = "user"
+    private val USER_NAME = "username"
     private val USER_DEVICE_ADDRESS = "device_address"
 
     private val MESSAGE_TABLE = "messages"
@@ -19,6 +20,7 @@ class DatabaseHelper(context: Context): SQLiteOpenHelper(context, "messenger.db"
     override fun onCreate(db: SQLiteDatabase?) {
         db?.execSQL("""
         CREATE TABLE $USER_TABLE (
+            $USER_NAME TEXT NOT NULL,
             $USER_DEVICE_ADDRESS TEXT PRIMARY KEY
         )
     """.trimIndent())

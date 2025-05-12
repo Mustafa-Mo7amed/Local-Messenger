@@ -14,11 +14,6 @@ import com.example.localmessenger.databinding.ActivityMessageBinding
 class MessageActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMessageBinding
 
-    lateinit var connectionStatus: TextView
-    lateinit var btnOnOff: Button
-    lateinit var btnDiscover: Button
-    lateinit var lvPeers: ListView
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMessageBinding.inflate(layoutInflater)
