@@ -16,7 +16,7 @@ class MessageFragment : Fragment(R.layout.fragment_message) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        lvMessages = view.findViewById(R.id.lvChat)
+        lvMessages = view.findViewById(R.id.lvHistoryChat)
 
         adapter = ArrayAdapter(
             requireContext(),

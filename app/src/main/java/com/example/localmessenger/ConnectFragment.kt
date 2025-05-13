@@ -8,7 +8,6 @@ import android.os.*
 import android.provider.Settings
 import android.view.View
 import android.widget.*
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import java.io.*
@@ -23,7 +22,10 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
     private lateinit var btnSend: Button
     private lateinit var btnOnOff: Button
     private lateinit var btnDiscover: Button
-    private lateinit var listView: ListView
+    private lateinit var lvPeers: ListView
+    private lateinit var lvChat: ListView
+    private lateinit var adapter: ArrayAdapter<String>
+    private val messages = mutableListOf<String>()
 
     private lateinit var manager: WifiP2pManager
     private lateinit var channel: WifiP2pManager.Channel
@@ -44,7 +46,10 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
         btnSend = view.findViewById(R.id.btnSendTesting)
         btnOnOff = view.findViewById(R.id.btnOnOff)
         btnDiscover = view.findViewById(R.id.btnDiscover)
-        listView = view.findViewById(R.id.lvPeers)
+        lvPeers = view.findViewById(R.id.lvPeers)
+        lvChat = view.findViewById(R.id.lvChat)
+        adapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, messages)
+        lvChat.adapter = adapter
 
         manager = requireContext().getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
         channel = manager.initialize(requireContext(), requireActivity().mainLooper, null)
@@ -55,7 +60,7 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                 peers.addAll(peerList.deviceList)
                 deviceArray = peers.toTypedArray()
                 val names = peers.map { it.deviceName }.toTypedArray()
-                listView.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, names)
+                lvPeers.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, names)
             }
 
             override val connectionInfoListener = WifiP2pManager.ConnectionInfoListener { info ->
@@ -124,7 +129,7 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
         }
 
 
-        listView.setOnItemClickListener { _, _, i, _ ->
+        lvPeers.setOnItemClickListener { _, _, i, _ ->
             val device = deviceArray[i]
             val config = WifiP2pConfig().apply { deviceAddress = device.deviceAddress }
             manager.connect(channel, config, object : WifiP2pManager.ActionListener {
@@ -194,6 +199,9 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                         val msg = String(buffer, 0, bytes)
                         Handler(Looper.getMainLooper()).post {
                             tvMessage.text = msg
+                            messages.add(msg)
+                            adapter.notifyDataSetChanged()
+                            lvChat.setSelection(messages.size - 1)
                         }
                     }
                 }
@@ -232,6 +240,9 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                         val msg = String(buffer, 0, bytes)
                         Handler(Looper.getMainLooper()).post {
                             tvMessage.text = msg
+                            messages.add(msg)
+                            adapter.notifyDataSetChanged()
+                            lvChat.setSelection(messages.size - 1)
                         }
                     }
                 }
