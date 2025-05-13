@@ -2,12 +2,14 @@ package com.example.localmessenger
 
 import android.Manifest
 import android.content.*
+import android.content.pm.PackageManager
 import android.net.wifi.p2p.*
 import android.os.*
 import android.provider.Settings
 import android.view.View
 import android.widget.*
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import java.io.*
 import java.net.*
@@ -90,16 +92,37 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
         }
 
         btnDiscover.setOnClickListener {
+            connectionStatus.text = "Attempting Discovery..."
             manager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
                     connectionStatus.text = "Discovery Started"
                 }
 
                 override fun onFailure(reason: Int) {
-                    connectionStatus.text = "Discovery Failed: $reason"
+                    when (reason) {
+                        WifiP2pManager.P2P_UNSUPPORTED -> {
+                            connectionStatus.text = "P2P not supported on this device"
+                        }
+                        WifiP2pManager.BUSY -> {
+                            connectionStatus.text = "System busy, retrying..."
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                manager.discoverPeers(channel, this)
+                            }, 2000)
+                        }
+                        WifiP2pManager.ERROR, 0 -> {
+                            connectionStatus.text = "Internal error (0). Retrying in 2s..."
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                manager.discoverPeers(channel, this)
+                            }, 2000)
+                        }
+                        else -> {
+                            connectionStatus.text = "Discovery Failed: $reason"
+                        }
+                    }
                 }
             })
         }
+
 
         listView.setOnItemClickListener { _, _, i, _ ->
             val device = deviceArray[i]
@@ -124,6 +147,21 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                     else client?.write(msg.toByteArray())
                 }
             }
+        }
+
+        checkPermissionsAndDiscover()
+    }
+
+    private fun checkPermissionsAndDiscover() {
+        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 100)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+            && ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.NEARBY_WIFI_DEVICES)
+            != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES), 101)
+        } else {
+            btnDiscover.performClick()
         }
     }
 
