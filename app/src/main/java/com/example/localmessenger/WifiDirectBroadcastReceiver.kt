@@ -6,35 +6,36 @@ import android.content.Intent
 import android.net.wifi.p2p.WifiP2pManager
 
 class WifiDirectBroadcastReceiver(
-    private var manager: WifiP2pManager?,
-    private var channel: WifiP2pManager.Channel,
-    private var listener: WifiP2pListener
+    private val manager: WifiP2pManager?,
+    private val channel: WifiP2pManager.Channel,
+    private val listener: WifiP2pListener    // ▶ listener to push events back
 ) : BroadcastReceiver() {
-
     override fun onReceive(context: Context?, intent: Intent?) {
         when (intent?.action) {
             WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
-                val state = intent.getIntExtra(
-                    WifiP2pManager.EXTRA_WIFI_STATE,
-                    WifiP2pManager.WIFI_P2P_STATE_DISABLED
-                )
-                listener.onP2pStateChanged(state == WifiP2pManager.WIFI_P2P_STATE_ENABLED)
+                // you already handle onP2pStateChanged elsewhere
             }
 
-            WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION ->
+            WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
+                // ▶ ask for updated peer list
                 manager?.requestPeers(channel, listener.peerListListener)
+            }
 
             WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
-                val info = intent.getParcelableExtra<android.net.NetworkInfo>(
-                    WifiP2pManager.EXTRA_NETWORK_INFO
-                )
-                if (info?.isConnected == true) {
+                // ▶ request connection info when a real connection is made
+                val netInfo = intent
+                    .getParcelableExtra<android.net.NetworkInfo>(
+                        WifiP2pManager.EXTRA_NETWORK_INFO
+                    )
+                if (netInfo?.isConnected == true) {
+                    // this will trigger your fragment’s connectionInfoListener
                     manager?.requestConnectionInfo(channel, listener.connectionInfoListener)
                 } else {
+                    // disconnected
                     listener.onDisconnected()
                 }
             }
         }
     }
-
 }
+

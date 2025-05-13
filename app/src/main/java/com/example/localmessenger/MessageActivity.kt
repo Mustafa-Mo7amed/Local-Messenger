@@ -21,12 +21,23 @@ class MessageActivity : AppCompatActivity() {
 
         val connectFragment = ConnectFragment()
         val messageFragment = MessageFragment()
-        setCurrentFragment(connectFragment)
+        supportFragmentManager.beginTransaction()
+            .add(R.id.flFragment, connectFragment, "CONNECT")
+            .add(R.id.flFragment, messageFragment, "MESSAGES")
+            .hide(messageFragment)
+            .commit()
 
         binding.bottomNavigationView.setOnItemSelectedListener {
-            when (it.itemId) {
-                R.id.miConnect -> setCurrentFragment(connectFragment)
-                R.id.miMessages -> setCurrentFragment(messageFragment)
+            supportFragmentManager.beginTransaction().apply {
+                when (it.itemId) {
+                    R.id.miConnect -> {
+                        hide(messageFragment); show(connectFragment)
+                    }
+                    R.id.miMessages -> {
+                        hide(connectFragment); show(messageFragment)
+                    }
+                }
+                commit()
             }
             true
         }

@@ -1,27 +1,28 @@
 package com.example.localmessenger
 
-import android.Manifest                                        // ▶ Imported Manifest
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager                         // ▶ Imported PackageManager
+import android.content.pm.PackageManager
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pManager
-import android.os.Build                                           // ▶ Imported Build
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.ListView
 import android.widget.TextView
-import androidx.core.content.ContextCompat                         // ▶ Ensure ContextCompat
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import androidx.core.app.ActivityCompat                           // ▶ Imported ActivityCompat for fragment requestPermissions
+import androidx.core.app.ActivityCompat
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -58,7 +59,7 @@ class ConnectFragment : Fragment(R.layout.fragment_connect), WifiP2pListener {
         private const val REQUEST_NEARBY  = 101
     }
 
-    // ▶ MODIFIED: callbacks for socket events
+    // callbacks for socket events
     private val onConnectedCallback: () -> Unit = {
         requireActivity().runOnUiThread {
             canSend = true
@@ -74,11 +75,11 @@ class ConnectFragment : Fragment(R.layout.fragment_connect), WifiP2pListener {
         parentFragmentManager.setFragmentResult("chat_message", bundle)
     }
 
-    // -------------------------------
-    // Fragment & P2P Listener implementations
-    // -------------------------------
+    // P2P Listener implementations
+    // override interface functions
+
     override val peerListListener = WifiP2pManager.PeerListListener { peerList ->
-        // ▶ MODIFIED: Re-enable discover button once peers update
+        // re-enable discover button once peers update
         btnDiscover.isEnabled = true
         if (peerList.deviceList == peers) return@PeerListListener
         peers.clear()
@@ -120,11 +121,25 @@ class ConnectFragment : Fragment(R.layout.fragment_connect), WifiP2pListener {
         super.onViewCreated(view, savedInstanceState)
         initialize(view)
 
-        // ▶ MODIFIED: setup onOff and permissions + auto-discover
         btnOnOff.setOnClickListener {
             startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
         }
-        checkPermissionsAndDiscover()   // ▶ MODIFIED: request and then discover
+        checkPermissionsAndDiscover()   // request permissions and then discover
+
+        parentFragmentManager.setFragmentResultListener(
+            "send_over_socket", viewLifecycleOwner
+        ) { _, bundle ->
+            val outgoing = bundle.getString("text") ?: return@setFragmentResultListener
+            Log.d("ConnectFragment", "I actually listen")
+            if (canSend) {
+                Log.d("ConnectFragment", "I'm in, then why the fuck does it not work")
+                if (this::server.isInitialized && server.isAlive) {
+                    server.write(outgoing.toByteArray())
+                } else if (this::client.isInitialized && client.isAlive) {
+                    client.write(outgoing.toByteArray())
+                }
+            }
+        }
     }
 
     private fun initialize(view: View) {
@@ -144,13 +159,12 @@ class ConnectFragment : Fragment(R.layout.fragment_connect), WifiP2pListener {
         }
 
         btnDiscover.setOnClickListener {
-            btnDiscover.isEnabled = false    // ▶ MODIFIED: disable button while discovering
+            btnDiscover.isEnabled = false    // disable button while discovering
             manager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
                     connectionStatus.text = "Discovery Started"
                 }
                 override fun onFailure(reason: Int) {
-                    // ▶ MODIFIED: detailed failure reasons
                     when (reason) {
                         WifiP2pManager.ERROR ->
                             connectionStatus.text = "Internal error—try again"
@@ -180,7 +194,7 @@ class ConnectFragment : Fragment(R.layout.fragment_connect), WifiP2pListener {
         }
     }
 
-    // ▶ MODIFIED: Permission request & discovery chaining
+    // permission request
     private fun checkPermissionsAndDiscover() {
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED) {
@@ -224,7 +238,7 @@ class ConnectFragment : Fragment(R.layout.fragment_connect), WifiP2pListener {
         server.start()
     }
 
-    // ▶ MODIFIED: thread definitions use callbacks
+    // thread definitions use callbacks
     class Client(
         private val host: InetAddress,
         private val onConnected: () -> Unit,
