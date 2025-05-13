@@ -41,11 +41,42 @@
     <ListView
         android:id="@+id/lvPeers"
         android:layout_width="match_parent"
-        android:layout_height="46dp"
+        android:layout_height="200dp"
         android:layout_marginTop="16dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintTop_toBottomOf="@id/btnOnOff"
         app:layout_constraintVertical_bias="0.0"
         tools:layout_editor_absoluteX="0dp" />
+
+    <TextView
+        android:id="@+id/tvMessageTesting"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.5"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/lvPeers" />
+
+    <EditText
+        android:id="@+id/etMessageTesting"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.5"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/tvMessageTesting" />
+
+    <Button
+        android:id="@+id/btnSendTesting"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Send"
+        android:layout_marginTop="16dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.5"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/etMessageTesting" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

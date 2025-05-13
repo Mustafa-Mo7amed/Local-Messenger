@@ -1,220 +1,129 @@
 package com.example.localmessenger
 
 import android.Manifest
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.content.pm.PackageManager
-import android.net.wifi.p2p.WifiP2pConfig
-import android.net.wifi.p2p.WifiP2pDevice
-import android.net.wifi.p2p.WifiP2pManager
-import android.os.Build
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.content.*
+import android.net.wifi.p2p.*
+import android.os.*
 import android.provider.Settings
-import android.util.Log
 import android.view.View
-import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.ListView
-import android.widget.TextView
-import androidx.core.content.ContextCompat
-import androidx.fragment.app.Fragment
+import android.widget.*
 import androidx.core.app.ActivityCompat
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.ServerSocket
-import java.net.Socket
+import androidx.fragment.app.Fragment
+import java.io.*
+import java.net.*
+import java.util.concurrent.Executors
 
-class ConnectFragment : Fragment(R.layout.fragment_connect), WifiP2pListener {
+class ConnectFragment : Fragment(R.layout.fragment_connect) {
 
-    // UI
     private lateinit var connectionStatus: TextView
+    private lateinit var tvMessage: TextView
+    private lateinit var etMessage: EditText
+    private lateinit var btnSend: Button
     private lateinit var btnOnOff: Button
     private lateinit var btnDiscover: Button
-    private lateinit var lvPeers: ListView
+    private lateinit var listView: ListView
 
-    // P2P
     private lateinit var manager: WifiP2pManager
     private lateinit var channel: WifiP2pManager.Channel
     private lateinit var receiver: BroadcastReceiver
     private lateinit var intentFilter: IntentFilter
 
-    // Peer list
     private var peers = ArrayList<WifiP2pDevice>()
-    private lateinit var deviceNameArray: Array<String>
     private lateinit var deviceArray: Array<WifiP2pDevice>
-
-    // Networking threads
-    private lateinit var server: Server
-    private lateinit var client: Client
-
-    // Whether we can now send
-    private var canSend = false
-
-    companion object {
-        private const val REQUEST_LOCATION = 100
-        private const val REQUEST_NEARBY  = 101
-    }
-
-    // callbacks for socket events
-    private val onConnectedCallback: () -> Unit = {
-        requireActivity().runOnUiThread {
-            canSend = true
-            connectionStatus.text = "Ready to send"
-        }
-    }
-
-    private val onMessageCallback: (String) -> Unit = { msg ->
-        val bundle = Bundle().apply {
-            putString("text", msg)
-            putBoolean("incoming", true)
-        }
-        parentFragmentManager.setFragmentResult("chat_message", bundle)
-    }
-
-    // P2P Listener implementations
-    // override interface functions
-
-    override val peerListListener = WifiP2pManager.PeerListListener { peerList ->
-        // re-enable discover button once peers update
-        btnDiscover.isEnabled = true
-        if (peerList.deviceList == peers) return@PeerListListener
-        peers.clear()
-        peers.addAll(peerList.deviceList)
-
-        deviceNameArray = peers.map { it.deviceName }.toTypedArray()
-        deviceArray = peers.toTypedArray()
-
-        val adapter = ArrayAdapter(requireContext(),
-            android.R.layout.simple_list_item_1,
-            deviceNameArray)
-        lvPeers.adapter = adapter
-
-        if (peers.isEmpty()) {
-            connectionStatus.text = "No Devices Found"
-        }
-    }
-
-    override val connectionInfoListener = WifiP2pManager.ConnectionInfoListener { info ->
-        if (info.groupFormed && info.isGroupOwner) {
-            connectionStatus.text = "Host"
-            startServer()
-        } else {
-            connectionStatus.text = "Client"
-            startClient(info.groupOwnerAddress)
-        }
-    }
-
-    override fun onP2pStateChanged(enabled: Boolean) {
-        connectionStatus.text = if (enabled) "P2P is ON" else "P2P is OFF"
-    }
-
-    override fun onDisconnected() {
-        connectionStatus.text = "Disconnected"
-        canSend = false
-    }
+    private var isHost = false
+    private var server: Server? = null
+    private var client: Client? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        initialize(view)
-
-        btnOnOff.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
-        }
-        checkPermissionsAndDiscover()   // request permissions and then discover
-
-        parentFragmentManager.setFragmentResultListener(
-            "send_over_socket", viewLifecycleOwner
-        ) { _, bundle ->
-            val outgoing = bundle.getString("text") ?: return@setFragmentResultListener
-            Log.d("ConnectFragment", "I actually listen")
-            if (canSend) {
-                Log.d("ConnectFragment", "I'm in, then why the fuck does it not work")
-                if (this::server.isInitialized && server.isAlive) {
-                    server.write(outgoing.toByteArray())
-                } else if (this::client.isInitialized && client.isAlive) {
-                    client.write(outgoing.toByteArray())
-                }
-            }
-        }
-    }
-
-    private fun initialize(view: View) {
         connectionStatus = view.findViewById(R.id.connection_status)
+        tvMessage = view.findViewById(R.id.tvMessageTesting)
+        etMessage = view.findViewById(R.id.etMessageTesting)
+        btnSend = view.findViewById(R.id.btnSendTesting)
         btnOnOff = view.findViewById(R.id.btnOnOff)
         btnDiscover = view.findViewById(R.id.btnDiscover)
-        lvPeers = view.findViewById(R.id.lvPeers)
+        listView = view.findViewById(R.id.lvPeers)
 
         manager = requireContext().getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
-        channel = manager.initialize(requireContext(), requireContext().mainLooper, null)
+        channel = manager.initialize(requireContext(), requireActivity().mainLooper, null)
 
-        receiver = WifiDirectBroadcastReceiver(manager, channel, this)
+        receiver = WifiDirectBroadcastReceiver(manager, channel, object : WifiP2pListener {
+            override val peerListListener = WifiP2pManager.PeerListListener { peerList ->
+                peers.clear()
+                peers.addAll(peerList.deviceList)
+                deviceArray = peers.toTypedArray()
+                val names = peers.map { it.deviceName }.toTypedArray()
+                listView.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, names)
+            }
+
+            override val connectionInfoListener = WifiP2pManager.ConnectionInfoListener { info ->
+                if (info.groupFormed && info.isGroupOwner) {
+                    isHost = true
+                    connectionStatus.text = "Host"
+                    server = Server()
+                    server!!.start()
+                } else if (info.groupFormed) {
+                    isHost = false
+                    connectionStatus.text = "Client"
+                    client = Client(info.groupOwnerAddress)
+                    client!!.start()
+                }
+            }
+
+            override fun onP2pStateChanged(enabled: Boolean) {
+                connectionStatus.text = if (enabled) "Wi-Fi Direct On" else "Wi-Fi Direct Off"
+            }
+
+            override fun onDisconnected() {
+                connectionStatus.text = "Disconnected"
+            }
+        })
+
         intentFilter = IntentFilter().apply {
             addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
             addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
             addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
         }
 
+        btnOnOff.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+        }
+
         btnDiscover.setOnClickListener {
-            btnDiscover.isEnabled = false    // disable button while discovering
             manager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
                     connectionStatus.text = "Discovery Started"
                 }
+
                 override fun onFailure(reason: Int) {
-                    when (reason) {
-                        WifiP2pManager.ERROR ->
-                            connectionStatus.text = "Internal error—try again"
-                        WifiP2pManager.P2P_UNSUPPORTED ->
-                            connectionStatus.text = "P2P not supported"
-                        WifiP2pManager.BUSY ->
-                            connectionStatus.text = "Framework busy—retry later"
-                        else ->
-                            connectionStatus.text = "Discovery Failed: $reason"
-                    }
-                    btnDiscover.isEnabled = true  // re-enable on failure
+                    connectionStatus.text = "Discovery Failed: $reason"
                 }
             })
         }
 
-        lvPeers.setOnItemClickListener { _, _, pos, _ ->
-            val device = deviceArray[pos]
+        listView.setOnItemClickListener { _, _, i, _ ->
+            val device = deviceArray[i]
             val config = WifiP2pConfig().apply { deviceAddress = device.deviceAddress }
             manager.connect(channel, config, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    connectionStatus.text = "Connecting..."
+                    connectionStatus.text = "Connecting to ${device.deviceName}"
                 }
+
                 override fun onFailure(reason: Int) {
                     connectionStatus.text = "Connect Failed: $reason"
                 }
             })
         }
-    }
 
-    // permission request
-    private fun checkPermissionsAndDiscover() {
-        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), REQUEST_LOCATION)
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-            && ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.NEARBY_WIFI_DEVICES)
-            != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES), REQUEST_NEARBY)
-        } else {
-            btnDiscover.performClick()
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if ((requestCode == REQUEST_LOCATION || requestCode == REQUEST_NEARBY)
-            && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            checkPermissionsAndDiscover()
-        } else {
-            connectionStatus.text = "Permission required to discover peers"
+        btnSend.setOnClickListener {
+            val msg = etMessage.text.toString()
+            if (msg.isNotEmpty()) {
+                val executor = Executors.newSingleThreadExecutor()
+                executor.execute {
+                    if (isHost) server?.write(msg.toByteArray())
+                    else client?.write(msg.toByteArray())
+                }
+            }
         }
     }
 
@@ -228,61 +137,79 @@ class ConnectFragment : Fragment(R.layout.fragment_connect), WifiP2pListener {
         requireContext().unregisterReceiver(receiver)
     }
 
-    private fun startClient(host: InetAddress) {
-        client = Client(host, onConnectedCallback, onMessageCallback)
-        client.start()
-    }
+    inner class Server : Thread() {
+        private lateinit var socket: Socket
+        private lateinit var outputStream: OutputStream
+        private lateinit var inputStream: InputStream
 
-    private fun startServer() {
-        server = Server(onConnectedCallback, onMessageCallback)
-        server.start()
-    }
-
-    // thread definitions use callbacks
-    class Client(
-        private val host: InetAddress,
-        private val onConnected: () -> Unit,
-        private val onMessage: (String) -> Unit
-    ) : Thread() {
-        private var socket: Socket? = null
         override fun run() {
             try {
-                socket = Socket().apply { connect(InetSocketAddress(host.hostAddress, 8888), 500) }
-                onConnected()
-                val input = socket!!.getInputStream()
-                val buf = ByteArray(1024)
+                val serverSocket = ServerSocket(8888)
+                socket = serverSocket.accept()
+                outputStream = socket.getOutputStream()
+                inputStream = socket.getInputStream()
+
+                val buffer = ByteArray(1024)
                 while (true) {
-                    val read = input.read(buf)
-                    if (read <= 0) break
-                    onMessage(String(buf, 0, read))
+                    val bytes = inputStream.read(buffer)
+                    if (bytes > 0) {
+                        val msg = String(buffer, 0, bytes)
+                        Handler(Looper.getMainLooper()).post {
+                            tvMessage.text = msg
+                        }
+                    }
                 }
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
-        fun write(bytes: ByteArray) {
-            try { socket?.getOutputStream()?.apply { write(bytes); flush() } } catch (e: Exception) { e.printStackTrace() }
+
+        fun write(data: ByteArray) {
+            try {
+                outputStream.write(data)
+                outputStream.flush()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
-    class Server(
-        private val onConnected: () -> Unit,
-        private val onMessage: (String) -> Unit
-    ) : Thread() {
-        private var serverSocket: ServerSocket? = null
-        private var clientSocket: Socket? = null
+
+    inner class Client(private val host: InetAddress) : Thread() {
+        private lateinit var socket: Socket
+        private lateinit var outputStream: OutputStream
+        private lateinit var inputStream: InputStream
+
         override fun run() {
             try {
-                serverSocket = ServerSocket(8888)
-                clientSocket = serverSocket!!.accept()
-                onConnected()
-                val input = clientSocket!!.getInputStream()
-                val buf = ByteArray(1024)
+                socket = Socket()
+                socket.connect(InetSocketAddress(host.hostAddress, 8888), 500)
+                outputStream = socket.getOutputStream()
+                inputStream = socket.getInputStream()
+
+                val buffer = ByteArray(1024)
                 while (true) {
-                    val read = input.read(buf)
-                    if (read <= 0) break
-                    onMessage(String(buf, 0, read))
+                    val bytes = inputStream.read(buffer)
+                    if (bytes > 0) {
+                        val msg = String(buffer, 0, bytes)
+                        Handler(Looper.getMainLooper()).post {
+                            tvMessage.text = msg
+                        }
+                    }
                 }
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
-        fun write(bytes: ByteArray) { try { clientSocket?.getOutputStream()?.apply { write(bytes); flush() } } catch (e: Exception) { e.printStackTrace() } }
+
+        fun write(data: ByteArray) {
+            try {
+                outputStream.write(data)
+                outputStream.flush()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
+
 }

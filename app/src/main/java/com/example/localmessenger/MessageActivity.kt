@@ -42,12 +42,4 @@ class MessageActivity : AppCompatActivity() {
             true
         }
     }
-
-    private fun setCurrentFragment(fragment: Fragment) {
-        supportFragmentManager.beginTransaction().apply {
-            replace(R.id.flFragment, fragment)
-            addToBackStack(null)
-            commit()
-        }
-    }
 }
