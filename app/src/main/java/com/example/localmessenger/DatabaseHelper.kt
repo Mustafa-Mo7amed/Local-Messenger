@@ -44,7 +44,7 @@ class DatabaseHelper(context: Context): SQLiteOpenHelper(context, "messenger.db"
     }
 
     fun insertMessage(senderAddress: String, receiverAddress: String, isOutgoing: Boolean, content: String) {
-        val db = this.writableDatabase
+        val db = writableDatabase
         val values = ContentValues().apply {
             put(MESSAGE_SENDER_ADDRESS, senderAddress)
             put(MESSAGE_RECEIVER_ADDRESS, receiverAddress)
@@ -58,9 +58,9 @@ class DatabaseHelper(context: Context): SQLiteOpenHelper(context, "messenger.db"
 
     @RequiresApi(Build.VERSION_CODES.JELLY_BEAN)
     fun getChatSessions(): List<ChatSession> {
-        val db = this.readableDatabase
+        val db = readableDatabase
         val sessions = mutableSetOf<ChatSession>()
-        
+
         val cursor = db.query(
             true, // distinct
             MESSAGE_TABLE,
@@ -73,15 +73,15 @@ class DatabaseHelper(context: Context): SQLiteOpenHelper(context, "messenger.db"
             null
         )
 
-        cursor.use {
-            while (it.moveToNext()) {
-                val sender = it.getString(it.getColumnIndexOrThrow(MESSAGE_SENDER_ADDRESS))
-                val receiver = it.getString(it.getColumnIndexOrThrow(MESSAGE_RECEIVER_ADDRESS))
-                
+        if (cursor.moveToFirst()) {
+            do {
+                val sender = cursor.getString(cursor.getColumnIndexOrThrow(MESSAGE_SENDER_ADDRESS))
+                val receiver = cursor.getString(cursor.getColumnIndexOrThrow(MESSAGE_RECEIVER_ADDRESS))
+
                 // Create a chat session with addresses in sorted order to ensure uniqueness
                 val addresses = listOf(sender, receiver).sorted()
                 sessions.add(ChatSession(addresses[0], addresses[1]))
-            }
+            } while (cursor.moveToNext())
         }
 
         return sessions.toList()
@@ -89,13 +89,13 @@ class DatabaseHelper(context: Context): SQLiteOpenHelper(context, "messenger.db"
 
     @RequiresApi(Build.VERSION_CODES.JELLY_BEAN)
     fun getMessagesForSession(device1Address: String, device2Address: String): List<Message> {
-        val db = this.readableDatabase
+        val db = readableDatabase
         val messages = mutableListOf<Message>()
-        
+
         val selection = "($MESSAGE_SENDER_ADDRESS = ? AND $MESSAGE_RECEIVER_ADDRESS = ?) OR " +
                        "($MESSAGE_SENDER_ADDRESS = ? AND $MESSAGE_RECEIVER_ADDRESS = ?)"
         val selectionArgs = arrayOf(device1Address, device2Address, device2Address, device1Address)
-        
+
         val cursor = db.query(
             MESSAGE_TABLE,
             null,
@@ -106,24 +106,23 @@ class DatabaseHelper(context: Context): SQLiteOpenHelper(context, "messenger.db"
             "$MESSAGE_TIMESTAMP ASC"
         )
 
-        cursor.use {
-            while (it.moveToNext()) {
+        if (cursor.moveToFirst()) {
+            do {
                 messages.add(Message(
-                    id = it.getLong(it.getColumnIndexOrThrow(MESSAGE_ID)),
-                    senderAddress = it.getString(it.getColumnIndexOrThrow(MESSAGE_SENDER_ADDRESS)),
-                    receiverAddress = it.getString(it.getColumnIndexOrThrow(MESSAGE_RECEIVER_ADDRESS)),
-                    isOutgoing = it.getInt(it.getColumnIndexOrThrow(MESSAGE_OUTGOING)) == 1,
-                    content = it.getString(it.getColumnIndexOrThrow(MESSAGE_CONTENT)),
-                    timestamp = it.getLong(it.getColumnIndexOrThrow(MESSAGE_TIMESTAMP))
+                    id = cursor.getLong(cursor.getColumnIndexOrThrow(MESSAGE_ID)),
+                    senderAddress = cursor.getString(cursor.getColumnIndexOrThrow(MESSAGE_SENDER_ADDRESS)),
+                    receiverAddress = cursor.getString(cursor.getColumnIndexOrThrow(MESSAGE_RECEIVER_ADDRESS)),
+                    isOutgoing = cursor.getInt(cursor.getColumnIndexOrThrow(MESSAGE_OUTGOING)) == 1,
+                    content = cursor.getString(cursor.getColumnIndexOrThrow(MESSAGE_CONTENT)),
+                    timestamp = cursor.getLong(cursor.getColumnIndexOrThrow(MESSAGE_TIMESTAMP))
                 ))
-            }
+            } while (cursor.moveToNext())
         }
 
         return messages
     }
 
     override fun onUpgrade(db: SQLiteDatabase?, oldVersion: Int, newVersion: Int) {
-        db?.execSQL("DROP TABLE IF EXISTS $MESSAGE_TABLE")
-        onCreate(db)
+
     }
 }

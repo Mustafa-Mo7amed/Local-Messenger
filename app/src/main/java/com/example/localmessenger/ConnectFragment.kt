@@ -155,25 +155,22 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                 val executor = Executors.newSingleThreadExecutor()
                 executor.execute {
                     try {
-                        if (isHost) {
-                            server?.write(msg.toByteArray())
-                            // Save outgoing message for host
-                            dbHelper.insertMessage(
-                                deviceArray[0].deviceAddress,
-                                client?.socket?.inetAddress?.hostAddress ?: "unknown",
-                                true,
-                                msg
-                            )
-                        } else {
-                            client?.write(msg.toByteArray())
-                            // Save outgoing message for client
-                            dbHelper.insertMessage(
-                                client?.socket?.localAddress?.hostAddress ?: "unknown",
-                                client?.host?.hostAddress ?: "unknown",
-                                true,
-                                msg
-                            )
-                        }
+                        server?.write(msg.toByteArray())
+                        // Save outgoing message for host
+                        dbHelper.insertMessage(
+                            deviceArray[0].deviceAddress,
+                            client?.socket?.inetAddress?.hostAddress ?: "unknown",
+                            true,
+                            msg
+                        )
+                        client?.write(msg.toByteArray())
+                        // Save outgoing message for client
+                        dbHelper.insertMessage(
+                            client?.socket?.localAddress?.hostAddress ?: "unknown",
+                            client?.host?.hostAddress ?: "unknown",
+                            true,
+                            msg
+                        )
                     } catch (e: Exception) {
                         e.printStackTrace()
                         activity?.runOnUiThread {
