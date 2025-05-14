@@ -153,10 +153,8 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                         server?.write(msg.toByteArray())
                         // Save outgoing message for host
                         dbHelper.insertMessage(
-                            deviceArray[0].deviceAddress,
-                            deviceArray[0].deviceName,
-                            client?.socket?.inetAddress?.hostAddress ?: "unknown",
-                            "Connected Device", // Since we don't know the client's name yet
+                            deviceArray[0].deviceAddress, // Using host's address as sender
+                            client?.socket?.inetAddress?.hostAddress ?: "unknown", // Client's address as receiver
                             true,
                             msg
                         )
@@ -164,10 +162,8 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                         client?.write(msg.toByteArray())
                         // Save outgoing message for client
                         dbHelper.insertMessage(
-                            client?.socket?.localAddress?.hostAddress ?: "unknown",
-                            android.os.Build.MODEL, // Use the device model name for the client
-                            client?.host?.hostAddress ?: "unknown",
-                            "Host Device", // Since we're the client, this is the host
+                            client?.socket?.localAddress?.hostAddress ?: "unknown", // Client's address as sender
+                            client?.host?.hostAddress ?: "unknown", // Host's address as receiver
                             true,
                             msg
                         )
@@ -237,10 +233,8 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                                 
                                 // Save incoming message for host
                                 dbHelper.insertMessage(
-                                    socket.inetAddress.hostAddress,
-                                    "Connected Device",
-                                    socket.localAddress.hostAddress,
-                                    deviceArray[0].deviceName,
+                                    socket.inetAddress.hostAddress, // Client's address as sender
+                                    socket.localAddress.hostAddress, // Host's address as receiver
                                     false,
                                     msg
                                 )
@@ -301,10 +295,8 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                                 
                                 // Save incoming message for client
                                 dbHelper.insertMessage(
-                                    host.hostAddress,
-                                    "Host Device",
-                                    socket.localAddress.hostAddress,
-                                    android.os.Build.MODEL,
+                                    host.hostAddress, // Host's address as sender
+                                    socket.localAddress.hostAddress, // Client's address as receiver
                                     false,
                                     msg
                                 )
