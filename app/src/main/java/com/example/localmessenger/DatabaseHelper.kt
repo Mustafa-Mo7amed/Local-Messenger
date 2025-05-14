@@ -62,14 +62,14 @@ class DatabaseHelper(context: Context): SQLiteOpenHelper(context, "messenger.db"
         val sessions = mutableSetOf<ChatSession>()
 
         val cursor = db.query(
-            true, // distinct
+            true,
             MESSAGE_TABLE,
             arrayOf(MESSAGE_SENDER_ADDRESS, MESSAGE_RECEIVER_ADDRESS),
             null,
             null,
             null,
             null,
-            "$MESSAGE_TIMESTAMP DESC",
+            null,
             null
         )
 
@@ -78,12 +78,12 @@ class DatabaseHelper(context: Context): SQLiteOpenHelper(context, "messenger.db"
                 val sender = cursor.getString(cursor.getColumnIndexOrThrow(MESSAGE_SENDER_ADDRESS))
                 val receiver = cursor.getString(cursor.getColumnIndexOrThrow(MESSAGE_RECEIVER_ADDRESS))
 
-                // Create a chat session with addresses in sorted order to ensure uniqueness
                 val addresses = listOf(sender, receiver).sorted()
                 sessions.add(ChatSession(addresses[0], addresses[1]))
             } while (cursor.moveToNext())
         }
-
+        cursor.close()
+        db.close()
         return sessions.toList()
     }
 
@@ -118,11 +118,10 @@ class DatabaseHelper(context: Context): SQLiteOpenHelper(context, "messenger.db"
                 ))
             } while (cursor.moveToNext())
         }
-
+        cursor.close()
+        db.close()
         return messages
     }
 
-    override fun onUpgrade(db: SQLiteDatabase?, oldVersion: Int, newVersion: Int) {
-
-    }
+    override fun onUpgrade(db: SQLiteDatabase?, oldVersion: Int, newVersion: Int) {}
 }

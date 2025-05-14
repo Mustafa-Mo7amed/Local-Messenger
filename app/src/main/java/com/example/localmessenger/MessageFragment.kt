@@ -44,23 +44,21 @@ class MessageFragment : Fragment(R.layout.fragment_message) {
         val sessions = dbHelper.getChatSessions()
         
         for (session in sessions) {
-            // Add session header
             messagesList.add("Chat between ${session.device1Address} and ${session.device2Address}")
-            
-            // Add messages for this session
+
             val messages = dbHelper.getMessagesForSession(session.device1Address, session.device2Address)
             for (message in messages) {
                 val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp))
                 val direction = if (message.isOutgoing) "➡️" else "⬅️"
                 messagesList.add("$direction $time: ${message.content}")
             }
-            messagesList.add("") // Add empty line between sessions
+            messagesList.add("")
         }
         
         adapter.notifyDataSetChanged()
-        if (messagesList.isNotEmpty()) {
+
+        if (messagesList.isNotEmpty())
             lvMessages.setSelection(messagesList.size - 1)
-        }
     }
 
     override fun onDestroy() {

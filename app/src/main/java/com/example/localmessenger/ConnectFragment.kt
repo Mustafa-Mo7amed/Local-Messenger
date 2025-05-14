@@ -169,7 +169,6 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                     try {
                         if (isHost && server != null) {
                             server?.write(msg.toByteArray())
-                            // Save outgoing message for host
                             if (deviceArray.isNotEmpty()) {
                                 dbHelper.insertMessage(
                                     deviceArray[0].deviceAddress,
@@ -180,7 +179,6 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                             }
                         } else if (!isHost && client != null) {
                             client?.write(msg.toByteArray())
-                            // Save outgoing message for client
                             dbHelper.insertMessage(
                                 client?.socket?.localAddress?.hostAddress ?: "unknown",
                                 client?.host?.hostAddress ?: "unknown",
@@ -232,9 +230,8 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
         super.onDestroy()
         server?.stopServer()
         client?.stopClient()
-        if (this::dbHelper.isInitialized) {
+        if (this::dbHelper.isInitialized)
             dbHelper.close()
-        }
     }
 
     inner class Server : Thread() {
@@ -271,8 +268,7 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                                     messages.add("Received: $msg")
                                     adapter.notifyDataSetChanged()
                                     lvChat.setSelection(messages.size - 1)
-                                    
-                                    // Save incoming message for host
+
                                     dbHelper.insertMessage(
                                         socket.inetAddress.hostAddress,
                                         socket.localAddress.hostAddress,
@@ -287,7 +283,6 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                         activity?.runOnUiThread {
                             Toast.makeText(context, "Error receiving message: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
-                        // Only break if socket is closed or connection is lost
                         if (!socket.isConnected || socket.isClosed) {
                             break
                         }
@@ -353,7 +348,6 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
         }
     }
 
-
     inner class Client(internal val host: InetAddress) : Thread() {
         private var isRunning = true
         internal lateinit var socket: Socket
@@ -387,8 +381,7 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                                     messages.add("Received: $msg")
                                     adapter.notifyDataSetChanged()
                                     lvChat.setSelection(messages.size - 1)
-                                    
-                                    // Save incoming message for client
+
                                     dbHelper.insertMessage(
                                         host.hostAddress,
                                         socket.localAddress.hostAddress,
@@ -403,7 +396,6 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                         activity?.runOnUiThread {
                             Toast.makeText(context, "Error receiving message: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
-                        // Only break if socket is closed or connection is lost
                         if (!socket.isConnected || socket.isClosed) {
                             break
                         }
@@ -468,5 +460,4 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
             interrupt()
         }
     }
-
 }

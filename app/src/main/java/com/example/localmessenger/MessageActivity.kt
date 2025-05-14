@@ -1,14 +1,7 @@
 package com.example.localmessenger
 
 import android.os.Bundle
-import android.widget.Button
-import android.widget.ListView
-import android.widget.TextView
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.fragment.app.Fragment
 import com.example.localmessenger.databinding.ActivityMessageBinding
 
 class MessageActivity : AppCompatActivity() {
@@ -31,10 +24,12 @@ class MessageActivity : AppCompatActivity() {
             supportFragmentManager.beginTransaction().apply {
                 when (it.itemId) {
                     R.id.miConnect -> {
-                        hide(messageFragment); show(connectFragment)
+                        hide(messageFragment)
+                        show(connectFragment)
                     }
                     R.id.miMessages -> {
-                        hide(connectFragment); show(messageFragment)
+                        hide(connectFragment)
+                        show(messageFragment)
                     }
                 }
                 commit()
