@@ -37,6 +37,7 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
     private var server: Server? = null
     private var client: Client? = null
     private lateinit var dbHelper: DatabaseHelper
+    private var isConnected = false
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -80,10 +81,16 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
 
             override fun onP2pStateChanged(enabled: Boolean) {
                 connectionStatus.text = if (enabled) "Wi-Fi Direct On" else "Wi-Fi Direct Off"
+                isConnected = enabled
             }
 
             override fun onDisconnected() {
                 connectionStatus.text = "Disconnected"
+                isConnected = false
+                server?.stopServer()
+                client?.stopClient()
+                server = null
+                client = null
             }
         })
 
@@ -147,6 +154,11 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
         btnSend.setOnClickListener {
             val msg = etMessage.text.toString()
             if (msg.isNotEmpty()) {
+                if (!isConnected) {
+                    Toast.makeText(context, "Not connected. Please connect to a peer first.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
                 messages.add(msg)
                 adapter.notifyDataSetChanged()
                 lvChat.setSelection(messages.size - 1)
@@ -155,26 +167,35 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                 val executor = Executors.newSingleThreadExecutor()
                 executor.execute {
                     try {
-                        server?.write(msg.toByteArray())
-                        // Save outgoing message for host
-                        dbHelper.insertMessage(
-                            deviceArray[0].deviceAddress,
-                            client?.socket?.inetAddress?.hostAddress ?: "unknown",
-                            true,
-                            msg
-                        )
-                        client?.write(msg.toByteArray())
-                        // Save outgoing message for client
-                        dbHelper.insertMessage(
-                            client?.socket?.localAddress?.hostAddress ?: "unknown",
-                            client?.host?.hostAddress ?: "unknown",
-                            true,
-                            msg
-                        )
+                        if (isHost && server != null) {
+                            server?.write(msg.toByteArray())
+                            // Save outgoing message for host
+                            if (deviceArray.isNotEmpty()) {
+                                dbHelper.insertMessage(
+                                    deviceArray[0].deviceAddress,
+                                    server?.socket?.inetAddress?.hostAddress ?: "unknown",
+                                    true,
+                                    msg
+                                )
+                            }
+                        } else if (!isHost && client != null) {
+                            client?.write(msg.toByteArray())
+                            // Save outgoing message for client
+                            dbHelper.insertMessage(
+                                client?.socket?.localAddress?.hostAddress ?: "unknown",
+                                client?.host?.hostAddress ?: "unknown",
+                                true,
+                                msg
+                            )
+                        } else {
+                            activity?.runOnUiThread {
+                                Toast.makeText(context, "Connection not established yet", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     } catch (e: Exception) {
                         e.printStackTrace()
                         activity?.runOnUiThread {
-                            Toast.makeText(context, "Failed to send message", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Failed to send message: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -219,16 +240,25 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
     inner class Server : Thread() {
         private var isRunning = true
         private lateinit var serverSocket: ServerSocket
-        private lateinit var socket: Socket
+        internal lateinit var socket: Socket
         private lateinit var outputStream: OutputStream
         private lateinit var inputStream: InputStream
+        private var isInitialized = false
 
         override fun run() {
             try {
                 serverSocket = ServerSocket(8888)
                 socket = serverSocket.accept()
+                socket.keepAlive = true
                 outputStream = socket.getOutputStream()
                 inputStream = socket.getInputStream()
+                isInitialized = true
+                isConnected = true
+
+                activity?.runOnUiThread {
+                    Toast.makeText(context, "Client connected", Toast.LENGTH_SHORT).show()
+                    connectionStatus.text = "Host - Connected"
+                }
 
                 val buffer = ByteArray(1024)
                 while (isRunning) {
@@ -238,7 +268,7 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                             val msg = String(buffer, 0, bytes)
                             activity?.runOnUiThread {
                                 if (isAdded && view != null) {
-                                    messages.add(msg)
+                                    messages.add("Received: $msg")
                                     adapter.notifyDataSetChanged()
                                     lvChat.setSelection(messages.size - 1)
                                     
@@ -254,15 +284,32 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                         }
                     } catch (e: IOException) {
                         e.printStackTrace()
-                        break
+                        activity?.runOnUiThread {
+                            Toast.makeText(context, "Error receiving message: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                        // Only break if socket is closed or connection is lost
+                        if (!socket.isConnected || socket.isClosed) {
+                            break
+                        }
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                isInitialized = false
+                isConnected = false
+                activity?.runOnUiThread {
+                    Toast.makeText(context, "Server error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    connectionStatus.text = "Host - Error"
+                }
             } finally {
                 try {
                     if (this::socket.isInitialized) socket.close()
-                    if (this::serverSocket.isInitialized) serverSocket.close()
+                    if (this::serverSocket.isInitialized) {
+                        serverSocket.close()
+                        activity?.runOnUiThread {
+                            Toast.makeText(context, "Server stopped", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -271,22 +318,37 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
 
         fun write(data: ByteArray) {
             try {
-                if (this::outputStream.isInitialized) {
+                if (isInitialized && this::outputStream.isInitialized && socket.isConnected && !socket.isClosed) {
                     outputStream.write(data)
                     outputStream.flush()
+                    activity?.runOnUiThread {
+                        messages.add("Sent: ${String(data)}")
+                        adapter.notifyDataSetChanged()
+                        lvChat.setSelection(messages.size - 1)
+                    }
+                } else {
+                    activity?.runOnUiThread {
+                        Toast.makeText(context, "Server connection not ready", Toast.LENGTH_SHORT).show()
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 activity?.runOnUiThread {
-                    Toast.makeText(context, "Failed to send message", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Failed to send message: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
 
         fun stopServer() {
             isRunning = false
-            if (this::socket.isInitialized) socket.close()
-            if (this::serverSocket.isInitialized) serverSocket.close()
+            isInitialized = false
+            isConnected = false
+            try {
+                if (this::socket.isInitialized) socket.close()
+                if (this::serverSocket.isInitialized) serverSocket.close()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
             interrupt()
         }
     }
@@ -297,13 +359,22 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
         internal lateinit var socket: Socket
         private lateinit var outputStream: OutputStream
         private lateinit var inputStream: InputStream
+        private var isInitialized = false
 
         override fun run() {
             try {
                 socket = Socket()
                 socket.connect(InetSocketAddress(host.hostAddress, 8888), 5000)
+                socket.keepAlive = true
                 outputStream = socket.getOutputStream()
                 inputStream = socket.getInputStream()
+                isInitialized = true
+                isConnected = true
+
+                activity?.runOnUiThread {
+                    Toast.makeText(context, "Connected to server", Toast.LENGTH_SHORT).show()
+                    connectionStatus.text = "Client - Connected"
+                }
 
                 val buffer = ByteArray(1024)
                 while (isRunning) {
@@ -313,7 +384,7 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                             val msg = String(buffer, 0, bytes)
                             activity?.runOnUiThread {
                                 if (isAdded && view != null) {
-                                    messages.add(msg)
+                                    messages.add("Received: $msg")
                                     adapter.notifyDataSetChanged()
                                     lvChat.setSelection(messages.size - 1)
                                     
@@ -329,17 +400,31 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                         }
                     } catch (e: IOException) {
                         e.printStackTrace()
-                        break
+                        activity?.runOnUiThread {
+                            Toast.makeText(context, "Error receiving message: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                        // Only break if socket is closed or connection is lost
+                        if (!socket.isConnected || socket.isClosed) {
+                            break
+                        }
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                isInitialized = false
+                isConnected = false
                 activity?.runOnUiThread {
-                    Toast.makeText(context, "Connection failed", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Connection failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    connectionStatus.text = "Client - Error"
                 }
             } finally {
                 try {
-                    if (this::socket.isInitialized) socket.close()
+                    if (this::socket.isInitialized) {
+                        socket.close()
+                        activity?.runOnUiThread {
+                            Toast.makeText(context, "Connection closed", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -348,21 +433,38 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
 
         fun write(data: ByteArray) {
             try {
-                if (this::outputStream.isInitialized) {
+                if (isInitialized && this::outputStream.isInitialized && socket.isConnected && !socket.isClosed) {
                     outputStream.write(data)
                     outputStream.flush()
+                    activity?.runOnUiThread {
+                        messages.add("Sent: ${String(data)}")
+                        adapter.notifyDataSetChanged()
+                        lvChat.setSelection(messages.size - 1)
+                    }
+                } else {
+                    activity?.runOnUiThread {
+                        Toast.makeText(context, "Client connection not ready", Toast.LENGTH_SHORT).show()
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 activity?.runOnUiThread {
-                    Toast.makeText(context, "Failed to send message", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Failed to send message: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
 
         fun stopClient() {
             isRunning = false
-            if (this::socket.isInitialized) socket.close()
+            isInitialized = false
+            isConnected = false
+            try {
+                if (this::socket.isInitialized) {
+                    socket.close()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
             interrupt()
         }
     }
