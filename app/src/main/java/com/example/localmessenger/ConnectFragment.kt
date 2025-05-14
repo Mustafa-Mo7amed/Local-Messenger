@@ -147,26 +147,38 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
         btnSend.setOnClickListener {
             val msg = etMessage.text.toString()
             if (msg.isNotEmpty()) {
+                messages.add(msg)
+                adapter.notifyDataSetChanged()
+                lvChat.setSelection(messages.size - 1)
+                etMessage.text.clear()
+
                 val executor = Executors.newSingleThreadExecutor()
                 executor.execute {
-                    if (isHost) {
-                        server?.write(msg.toByteArray())
-                        // Save outgoing message for host
-                        dbHelper.insertMessage(
-                            deviceArray[0].deviceAddress, // Using host's address as sender
-                            client?.socket?.inetAddress?.hostAddress ?: "unknown", // Client's address as receiver
-                            true,
-                            msg
-                        )
-                    } else {
-                        client?.write(msg.toByteArray())
-                        // Save outgoing message for client
-                        dbHelper.insertMessage(
-                            client?.socket?.localAddress?.hostAddress ?: "unknown", // Client's address as sender
-                            client?.host?.hostAddress ?: "unknown", // Host's address as receiver
-                            true,
-                            msg
-                        )
+                    try {
+                        if (isHost) {
+                            server?.write(msg.toByteArray())
+                            // Save outgoing message for host
+                            dbHelper.insertMessage(
+                                deviceArray[0].deviceAddress,
+                                client?.socket?.inetAddress?.hostAddress ?: "unknown",
+                                true,
+                                msg
+                            )
+                        } else {
+                            client?.write(msg.toByteArray())
+                            // Save outgoing message for client
+                            dbHelper.insertMessage(
+                                client?.socket?.localAddress?.hostAddress ?: "unknown",
+                                client?.host?.hostAddress ?: "unknown",
+                                true,
+                                msg
+                            )
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        activity?.runOnUiThread {
+                            Toast.makeText(context, "Failed to send message", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -200,8 +212,8 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
 
     override fun onDestroy() {
         super.onDestroy()
-        server?.interrupt()
-        client?.interrupt()
+        server?.stopServer()
+        client?.stopClient()
         if (this::dbHelper.isInitialized) {
             dbHelper.close()
         }
@@ -209,44 +221,51 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
 
     inner class Server : Thread() {
         private var isRunning = true
+        private lateinit var serverSocket: ServerSocket
         private lateinit var socket: Socket
         private lateinit var outputStream: OutputStream
         private lateinit var inputStream: InputStream
 
         override fun run() {
             try {
-                val serverSocket = ServerSocket(8888)
+                serverSocket = ServerSocket(8888)
                 socket = serverSocket.accept()
                 outputStream = socket.getOutputStream()
                 inputStream = socket.getInputStream()
 
                 val buffer = ByteArray(1024)
                 while (isRunning) {
-                    val bytes = inputStream.read(buffer)
-                    if (bytes > 0) {
-                        val msg = String(buffer, 0, bytes)
-                        activity?.runOnUiThread {
-                            if (isAdded && view != null) {
-                                messages.add(msg)
-                                adapter.notifyDataSetChanged()
-                                lvChat.setSelection(messages.size - 1)
-                                
-                                // Save incoming message for host
-                                dbHelper.insertMessage(
-                                    socket.inetAddress.hostAddress, // Client's address as sender
-                                    socket.localAddress.hostAddress, // Host's address as receiver
-                                    false,
-                                    msg
-                                )
+                    try {
+                        val bytes = inputStream.read(buffer)
+                        if (bytes > 0) {
+                            val msg = String(buffer, 0, bytes)
+                            activity?.runOnUiThread {
+                                if (isAdded && view != null) {
+                                    messages.add(msg)
+                                    adapter.notifyDataSetChanged()
+                                    lvChat.setSelection(messages.size - 1)
+                                    
+                                    // Save incoming message for host
+                                    dbHelper.insertMessage(
+                                        socket.inetAddress.hostAddress,
+                                        socket.localAddress.hostAddress,
+                                        false,
+                                        msg
+                                    )
+                                }
                             }
                         }
+                    } catch (e: IOException) {
+                        e.printStackTrace()
+                        break
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
                 try {
-                    socket.close()
+                    if (this::socket.isInitialized) socket.close()
+                    if (this::serverSocket.isInitialized) serverSocket.close()
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -255,15 +274,22 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
 
         fun write(data: ByteArray) {
             try {
-                outputStream.write(data)
-                outputStream.flush()
+                if (this::outputStream.isInitialized) {
+                    outputStream.write(data)
+                    outputStream.flush()
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
+                activity?.runOnUiThread {
+                    Toast.makeText(context, "Failed to send message", Toast.LENGTH_SHORT).show()
+                }
             }
         }
 
         fun stopServer() {
             isRunning = false
+            if (this::socket.isInitialized) socket.close()
+            if (this::serverSocket.isInitialized) serverSocket.close()
             interrupt()
         }
     }
@@ -278,37 +304,45 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
         override fun run() {
             try {
                 socket = Socket()
-                socket.connect(InetSocketAddress(host.hostAddress, 8888), 500)
+                socket.connect(InetSocketAddress(host.hostAddress, 8888), 5000)
                 outputStream = socket.getOutputStream()
                 inputStream = socket.getInputStream()
 
                 val buffer = ByteArray(1024)
                 while (isRunning) {
-                    val bytes = inputStream.read(buffer)
-                    if (bytes > 0) {
-                        val msg = String(buffer, 0, bytes)
-                        activity?.runOnUiThread {
-                            if (isAdded && view != null) {
-                                messages.add(msg)
-                                adapter.notifyDataSetChanged()
-                                lvChat.setSelection(messages.size - 1)
-                                
-                                // Save incoming message for client
-                                dbHelper.insertMessage(
-                                    host.hostAddress, // Host's address as sender
-                                    socket.localAddress.hostAddress, // Client's address as receiver
-                                    false,
-                                    msg
-                                )
+                    try {
+                        val bytes = inputStream.read(buffer)
+                        if (bytes > 0) {
+                            val msg = String(buffer, 0, bytes)
+                            activity?.runOnUiThread {
+                                if (isAdded && view != null) {
+                                    messages.add(msg)
+                                    adapter.notifyDataSetChanged()
+                                    lvChat.setSelection(messages.size - 1)
+                                    
+                                    // Save incoming message for client
+                                    dbHelper.insertMessage(
+                                        host.hostAddress,
+                                        socket.localAddress.hostAddress,
+                                        false,
+                                        msg
+                                    )
+                                }
                             }
                         }
+                    } catch (e: IOException) {
+                        e.printStackTrace()
+                        break
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                activity?.runOnUiThread {
+                    Toast.makeText(context, "Connection failed", Toast.LENGTH_SHORT).show()
+                }
             } finally {
                 try {
-                    socket.close()
+                    if (this::socket.isInitialized) socket.close()
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -317,15 +351,21 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
 
         fun write(data: ByteArray) {
             try {
-                outputStream.write(data)
-                outputStream.flush()
+                if (this::outputStream.isInitialized) {
+                    outputStream.write(data)
+                    outputStream.flush()
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
+                activity?.runOnUiThread {
+                    Toast.makeText(context, "Failed to send message", Toast.LENGTH_SHORT).show()
+                }
             }
         }
 
         fun stopClient() {
             isRunning = false
+            if (this::socket.isInitialized) socket.close()
             interrupt()
         }
     }
