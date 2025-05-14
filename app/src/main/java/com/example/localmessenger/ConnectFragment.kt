@@ -17,7 +17,6 @@ import java.util.concurrent.Executors
 class ConnectFragment : Fragment(R.layout.fragment_connect) {
 
     private lateinit var connectionStatus: TextView
-    private lateinit var tvMessage: TextView
     private lateinit var etMessage: EditText
     private lateinit var btnSend: Button
     private lateinit var btnOnOff: Button
@@ -37,11 +36,13 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
     private var isHost = false
     private var server: Server? = null
     private var client: Client? = null
+    private lateinit var dbHelper: DatabaseHelper
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        dbHelper = DatabaseHelper(requireContext())
+        
         connectionStatus = view.findViewById(R.id.connection_status)
-        tvMessage = view.findViewById(R.id.tvMessageTesting)
         etMessage = view.findViewById(R.id.etMessageTesting)
         btnSend = view.findViewById(R.id.btnSendTesting)
         btnOnOff = view.findViewById(R.id.btnOnOff)
@@ -148,8 +149,29 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
             if (msg.isNotEmpty()) {
                 val executor = Executors.newSingleThreadExecutor()
                 executor.execute {
-                    if (isHost) server?.write(msg.toByteArray())
-                    else client?.write(msg.toByteArray())
+                    if (isHost) {
+                        server?.write(msg.toByteArray())
+                        // Save outgoing message for host
+                        dbHelper.insertMessage(
+                            deviceArray[0].deviceAddress,
+                            deviceArray[0].deviceName,
+                            client?.socket?.inetAddress?.hostAddress ?: "unknown",
+                            "Connected Device", // Since we don't know the client's name yet
+                            true,
+                            msg
+                        )
+                    } else {
+                        client?.write(msg.toByteArray())
+                        // Save outgoing message for client
+                        dbHelper.insertMessage(
+                            client?.socket?.localAddress?.hostAddress ?: "unknown",
+                            android.os.Build.MODEL, // Use the device model name for the client
+                            client?.host?.hostAddress ?: "unknown",
+                            "Host Device", // Since we're the client, this is the host
+                            true,
+                            msg
+                        )
+                    }
                 }
             }
         }
@@ -180,7 +202,17 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
         requireContext().unregisterReceiver(receiver)
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        server?.interrupt()
+        client?.interrupt()
+        if (this::dbHelper.isInitialized) {
+            dbHelper.close()
+        }
+    }
+
     inner class Server : Thread() {
+        private var isRunning = true
         private lateinit var socket: Socket
         private lateinit var outputStream: OutputStream
         private lateinit var inputStream: InputStream
@@ -193,20 +225,37 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                 inputStream = socket.getInputStream()
 
                 val buffer = ByteArray(1024)
-                while (true) {
+                while (isRunning) {
                     val bytes = inputStream.read(buffer)
                     if (bytes > 0) {
                         val msg = String(buffer, 0, bytes)
-                        Handler(Looper.getMainLooper()).post {
-                            tvMessage.text = msg
-                            messages.add(msg)
-                            adapter.notifyDataSetChanged()
-                            lvChat.setSelection(messages.size - 1)
+                        activity?.runOnUiThread {
+                            if (isAdded && view != null) {
+                                messages.add(msg)
+                                adapter.notifyDataSetChanged()
+                                lvChat.setSelection(messages.size - 1)
+                                
+                                // Save incoming message for host
+                                dbHelper.insertMessage(
+                                    socket.inetAddress.hostAddress,
+                                    "Connected Device",
+                                    socket.localAddress.hostAddress,
+                                    deviceArray[0].deviceName,
+                                    false,
+                                    msg
+                                )
+                            }
                         }
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+            } finally {
+                try {
+                    socket.close()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         }
 
@@ -218,11 +267,17 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                 e.printStackTrace()
             }
         }
+
+        fun stopServer() {
+            isRunning = false
+            interrupt()
+        }
     }
 
 
-    inner class Client(private val host: InetAddress) : Thread() {
-        private lateinit var socket: Socket
+    inner class Client(internal val host: InetAddress) : Thread() {
+        private var isRunning = true
+        internal lateinit var socket: Socket
         private lateinit var outputStream: OutputStream
         private lateinit var inputStream: InputStream
 
@@ -234,20 +289,37 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
                 inputStream = socket.getInputStream()
 
                 val buffer = ByteArray(1024)
-                while (true) {
+                while (isRunning) {
                     val bytes = inputStream.read(buffer)
                     if (bytes > 0) {
                         val msg = String(buffer, 0, bytes)
-                        Handler(Looper.getMainLooper()).post {
-                            tvMessage.text = msg
-                            messages.add(msg)
-                            adapter.notifyDataSetChanged()
-                            lvChat.setSelection(messages.size - 1)
+                        activity?.runOnUiThread {
+                            if (isAdded && view != null) {
+                                messages.add(msg)
+                                adapter.notifyDataSetChanged()
+                                lvChat.setSelection(messages.size - 1)
+                                
+                                // Save incoming message for client
+                                dbHelper.insertMessage(
+                                    host.hostAddress,
+                                    "Host Device",
+                                    socket.localAddress.hostAddress,
+                                    android.os.Build.MODEL,
+                                    false,
+                                    msg
+                                )
+                            }
                         }
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+            } finally {
+                try {
+                    socket.close()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         }
 
@@ -258,6 +330,11 @@ class ConnectFragment : Fragment(R.layout.fragment_connect) {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+        }
+
+        fun stopClient() {
+            isRunning = false
+            interrupt()
         }
     }
 
